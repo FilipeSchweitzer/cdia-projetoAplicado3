@@ -1,3 +1,4 @@
 certifi
 requests
 polars
+fastexcel

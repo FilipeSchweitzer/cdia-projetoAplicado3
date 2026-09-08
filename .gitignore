@@ -1,3 +1,10 @@
 *.pem
-Microdados_ZIP/*
-dados_censos
+*.json
+*/__pycache__
+__pycache__
+.venv
+
+#pastas de dados
+dump
+zip
+dados
