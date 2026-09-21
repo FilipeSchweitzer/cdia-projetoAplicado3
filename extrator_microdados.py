@@ -1,7 +1,7 @@
 import re
 import shutil
 import ssl
-import zipfile
+import subprocess
 from pathlib import Path
 import time
 import certifi
@@ -14,17 +14,49 @@ HEADERS = {
                    '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
 }
 
-def pegar_com_retry(url, headers, ca_bundle, tentativas=5):
+def pegar_com_retry(url, headers, ca_bundle, offset=0, tentativas=5):
     for i in range(tentativas):
         try:
-            resposta = requests.get(url, stream=True, timeout=30, verify=str(ca_bundle), headers=headers)
+            req_headers = {**headers, "Range": f"bytes={offset}-"} if offset else headers
+            resposta = requests.get(url, stream=True, timeout=30, verify=str(ca_bundle), headers=req_headers)
             resposta.raise_for_status()
             return resposta
-        except requests.exceptions.ConnectionError as e:
+        except (requests.exceptions.ConnectionError, requests.exceptions.HTTPError) as e:
             espera = 2 ** i  # backoff exponencial: 1, 2, 4, 8, 16s
             print(f"Tentativa {i+1} falhou ({e}). Esperando {espera}s...")
             time.sleep(espera)
     raise RuntimeError("Não foi possível baixar o arquivo após várias tentativas.")
+
+def baixar_com_resume(url, headers, ca_bundle, destino, tentativas_streaming=5):
+    for tentativa in range(tentativas_streaming):
+        offset = destino.stat().st_size if destino.exists() else 0
+        resposta = pegar_com_retry(url, headers, ca_bundle, offset=offset)
+
+        content_range = resposta.headers.get("content-range")
+        if content_range and "/" in content_range:
+            tamanho_total = int(content_range.rsplit("/", 1)[-1])
+        else:
+            tamanho_total = offset + int(resposta.headers.get("content-length", 0))
+            if offset and resposta.status_code != 206:
+                # servidor não suporta resume: recomeça do zero
+                offset = 0
+
+        modo = "ab" if offset else "wb"
+        try:
+            with open(destino, modo) as f:
+                for chunk in resposta.iter_content(chunk_size=8192):
+                    f.write(chunk)
+                    print(f"Baixando: {f.tell() / 1024 / 1024:.2f} / {tamanho_total / 1024 / 1024:.2f} MB", end="\r")
+            print()
+        except requests.exceptions.ConnectionError as e:
+            print(f"\nConexão caiu durante o download ({e}). Retomando...")
+            continue
+
+        if tamanho_total and destino.stat().st_size == tamanho_total:
+            return
+        print(f"\nArquivo incompleto ({destino.stat().st_size} / {tamanho_total} bytes). Retomando...")
+
+    raise RuntimeError("Não foi possível concluir o download após várias tentativas.")
 
 def pegar_microdados_ano(ano: int):
     url = f"https://download.inep.gov.br/microdados/microdados_enem_{ano}.zip"
@@ -39,16 +71,10 @@ def pegar_microdados_ano(ano: int):
         ).content
         CA_BUNDLE.write_text(Path(certifi.where()).read_text() + ssl.DER_cert_to_PEM_cert(intermediate))
 
-    resposta = pegar_com_retry(url, HEADERS, CA_BUNDLE)
-    tamanho_total = int(resposta.headers.get("content-length", 0)) / 1024 / 1024
-    with open(destino, "wb") as f:
-        for chunk in resposta.iter_content(chunk_size=8192):
-            f.write(chunk)
-            print(f"Baixando: {f.tell() / 1024 / 1024:.2f} / {tamanho_total:.2f} MB", end="\r")
-    print()
+    baixar_com_resume(url, HEADERS, CA_BUNDLE, destino)
 
-    with zipfile.ZipFile(destino) as z:
-        z.extractall(DUMP_DIR)
+    Path(DUMP_DIR).mkdir(parents=True, exist_ok=True)
+    subprocess.run(["7z", "x", "-y", f"-o{DUMP_DIR}", str(destino)], check=True)
 
 def organizar_dados():
     dump_path = Path(DUMP_DIR)
@@ -77,5 +103,5 @@ def organizar_dados():
         print(f"Dados do ano {ano} movidos para '{destino}'.")
 
 if __name__ == "__main__":
-    # pegar_microdados_ano(2025)
+    pegar_microdados_ano(2025)
     organizar_dados()
