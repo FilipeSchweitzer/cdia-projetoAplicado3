@@ -6,6 +6,7 @@ from pathlib import Path
 import time
 import certifi
 import requests
+import polars as pl
 
 from config import ZIP_DIR, DUMP_DIR, DADOS_DIR
 
@@ -102,6 +103,21 @@ def organizar_dados():
         shutil.move(str(pasta_dados), str(destino))
         print(f"Dados do ano {ano} movidos para '{destino}'.")
 
+def csvs_para_parquet():
+    for caminho_csv in Path(DADOS_DIR).rglob('*.csv'):
+        caminho_parquet = caminho_csv.with_suffix('.parquet')
+        if caminho_parquet.exists():
+            print(f'{caminho_parquet.name} já existe, pulando.')
+            continue
+
+        df = pl.read_csv(caminho_csv, separator=';', encoding='latin1', low_memory=True, rechunk=False)
+        df.write_parquet(caminho_parquet)
+
+        tamanho_csv_mb = caminho_csv.stat().st_size / 1e6
+        tamanho_parquet_mb = caminho_parquet.stat().st_size / 1e6
+        print(f'{caminho_csv.name} ({tamanho_csv_mb:.1f} MB) -> {caminho_parquet.name} ({tamanho_parquet_mb:.1f} MB)')
+
 if __name__ == "__main__":
-    pegar_microdados_ano(2025)
-    organizar_dados()
+    #pegar_microdados_ano(2023)
+    #organizar_dados()
+    csvs_para_parquet()

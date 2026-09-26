@@ -2,3 +2,4 @@ certifi
 requests
 polars
 fastexcel
+streamlit
