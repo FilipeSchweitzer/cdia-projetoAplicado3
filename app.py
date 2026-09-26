@@ -3,6 +3,9 @@ import sys
 import polars as pl
 import streamlit as st
 
+import main
+from graficos import percentil
+
 # permite rodar com "python app.py" (ex.: botão Run do VSCode), relançando via "streamlit run"
 if __name__ == '__main__' and not st.runtime.exists():
     from streamlit.web import cli as stcli
@@ -11,47 +14,29 @@ if __name__ == '__main__' and not st.runtime.exists():
 
 st.set_page_config(page_title='Posição no ENEM', layout='wide')
 
-# valores fixos das áreas de conhecimento (coluna_nota em estimar_posicao_candidato)
-AREAS_NOTA = {
-    'Ciências da Natureza': 'NU_NOTA_CN',
-    'Ciências Humanas': 'NU_NOTA_CH',
-    'Linguagens e Códigos': 'NU_NOTA_LC',
-    'Matemática': 'NU_NOTA_MT',
-    'Redação': 'NU_NOTA_REDACAO',
-}
-
 # diferença (em pontos) até a qual o candidato é considerado "dentro da média"
 TOLERANCIA_MEDIA = 10.0
+
+# rótulo no formulário -> variável do dicionário (as opções vêm do main.opcoes_formulario)
+CAMPOS_PERFIL = {
+    'sexo': ('Sexo', 'TP_SEXO'),
+    'cor_raca': ('Cor/raça', 'TP_COR_RACA'),
+    'nacionalidade': ('Nacionalidade', 'TP_NACIONALIDADE'),
+    'st_conclusao': ('Situação do Ensino Médio', 'TP_ST_CONCLUSAO'),
+    'ano_concluiu': ('Ano de conclusão do Ensino Médio', 'TP_ANO_CONCLUIU'),
+}
 
 
 def iniciar_estado():
     if 'pagina' not in st.session_state:
         st.session_state.pagina = 'login'
         st.session_state.usuario = None
-        st.session_state.parametros = None
+        st.session_state.resultado = None
 
 
 def ir_para(pagina: str):
     st.session_state.pagina = pagina
     st.rerun()
-
-
-def autenticar(usuario: str, senha: str) -> bool:
-    # TODO: validar usuário e senha de verdade
-    return bool(usuario) and bool(senha)
-
-
-def calcular_resultado(parametros: dict) -> dict:
-    # TODO: substituir por estimar_posicao_candidato(**parametros) do Colab_notebook.ipynb
-    media_grupo = 550.0
-    return {
-        'nivel_inse': 'Nível IV',
-        'tamanho_grupo': 0,
-        'media_grupo': media_grupo,
-        'nota_usuario': parametros['nota_usuario'],
-        'diferenca_absoluta': round(parametros['nota_usuario'] - media_grupo, 1),
-        'percentil_usuario': 0.0,
-    }
 
 
 def pagina_login():
@@ -63,7 +48,7 @@ def pagina_login():
         entrar = st.form_submit_button('Entrar')
 
     if entrar:
-        if autenticar(usuario, senha):
+        if main.autenticar(usuario, senha):
             st.session_state.usuario = usuario
             ir_para('formulario')
         else:
@@ -73,32 +58,79 @@ def pagina_login():
 def pagina_formulario():
     st.title('Dados do candidato')
 
+    try:
+        opcoes = main.opcoes_formulario()
+    except main.DadosIndisponiveis as erro:
+        st.error(str(erro))
+        st.stop()
+
+    st.caption(f'Comparação com os microdados do Enem {opcoes["ano"]}.')
+
     with st.form('form_candidato'):
-        area = st.selectbox('Área de conhecimento', list(AREAS_NOTA.keys()))
-        nota_usuario = st.number_input('Sua nota', min_value=0.0, max_value=1000.0, step=0.1)
+        st.subheader('Nota')
+        area = st.selectbox('Área de conhecimento', opcoes['areas'])
+        nota = st.number_input('Sua nota', min_value=0.0, max_value=1000.0, value=None, step=0.1)
+
+        st.subheader('Localização')
+        uf = st.selectbox('Unidade da Federação', opcoes['ufs'], index=None, placeholder='Selecione a sua UF')
         co_municipio = st.text_input('Código do município (IBGE)', placeholder='Ex.: 3550308')
         co_escola = st.text_input('Código da escola (opcional)', placeholder='Ex.: 35000000')
+
+        st.subheader('Perfil')
+        idade = st.number_input('Idade', min_value=10, max_value=100, value=None, step=1)
+        perfil = {
+            campo: st.selectbox(rotulo, opcoes[variavel], index=None, placeholder='Selecione')
+            for campo, (rotulo, variavel) in CAMPOS_PERFIL.items()
+        }
+        treineiro = st.checkbox('Fiz a prova apenas para treinar (treineiro)')
+
         enviar = st.form_submit_button('Ver resultado')
 
-    if enviar:
-        if not co_municipio.strip().isdigit():
-            st.error('Informe um código de município válido (apenas números).')
-            return
-        if co_escola.strip() and not co_escola.strip().isdigit():
-            st.error('O código da escola deve conter apenas números.')
-            return
+    if not enviar:
+        return
 
-        st.session_state.parametros = {
-            'nota_usuario': nota_usuario,
-            'coluna_nota': AREAS_NOTA[area],
-            'co_municipio': int(co_municipio),
-            'co_escola': int(co_escola) if co_escola.strip() else None,
-        }
-        ir_para('dashboard')
+    if nota is None:
+        st.error('Informe a sua nota.')
+        return
+    if uf is None:
+        st.error('Selecione a sua UF.')
+        return
+    if not co_municipio.strip().isdigit():
+        st.error('Informe um código de município válido (apenas números).')
+        return
+    if co_escola.strip() and not co_escola.strip().isdigit():
+        st.error('O código da escola deve conter apenas números.')
+        return
+    if idade is None:
+        st.error('Informe a sua idade.')
+        return
+    faltando = [CAMPOS_PERFIL[campo][0] for campo, valor in perfil.items() if valor is None]
+    if faltando:
+        st.error(f'Preencha: {", ".join(faltando)}.')
+        return
+
+    entrada = {
+        'area': area,
+        'nota': nota,
+        'uf': uf,
+        'co_municipio': int(co_municipio),
+        'co_escola': int(co_escola) if co_escola.strip() else None,
+        'idade': idade,
+        **perfil,
+        'treineiro': treineiro,
+    }
+
+    try:
+        with st.spinner('Calculando...'):
+            st.session_state.resultado = main.analisar(entrada)
+    except ValueError as erro:
+        st.error(str(erro))
+        return
+    ir_para('dashboard')
 
 
-def mensagem_posicao(resultado: dict):
-    diferenca = resultado['diferenca_absoluta']
+def mensagem_posicao(posicao: dict):
+    diferenca = posicao['diferenca_absoluta']
 
     if diferenca > TOLERANCIA_MEDIA:
         st.success(f'Você está acima da média ({diferenca:+.1f} pontos).')
@@ -111,32 +143,36 @@ def mensagem_posicao(resultado: dict):
 def pagina_dashboard():
     st.title('Dashboard')
 
-    resultado = calcular_resultado(st.session_state.parametros)
-    mensagem_posicao(resultado)
-
-    # TODO: trocar os dados de exemplo pelos dados reais de cada gráfico/tabela
-    exemplo = pl.DataFrame({
-        'NIVEL': ['I', 'II', 'III', 'IV', 'V', 'VI'],
-        'MEDIA': [450.0, 480.0, 510.0, 540.0, 570.0, 600.0],
-    })
+    resultado = st.session_state.resultado
+    posicao = resultado['posicao']
+    st.caption(
+        f'Enem {resultado["ano"]} · {posicao["nivel_inse"]} do INSE '
+        f'(estimado {"pela sua escola" if resultado["fonte_nivel"] == "escola" else "pelo seu município"}) · '
+        f'{posicao["tamanho_grupo"]:,} candidatos no grupo'
+    )
+    mensagem_posicao(posicao)
 
     coluna_1, coluna_2 = st.columns(2)
     with coluna_1:
-        st.subheader('Gráfico 1')
-        st.bar_chart(exemplo, x='NIVEL', y='MEDIA')
+        st.subheader('Sua posição entre os candidatos')
+        st.caption(percentil.frase_percentil(resultado['percentis']))
+        st.altair_chart(percentil.grafico_percentis(resultado['percentis']), width='stretch')
     with coluna_2:
+        # TODO: gráfico de outro integrante
         st.subheader('Gráfico 2')
-        st.line_chart(exemplo, x='NIVEL', y='MEDIA')
+        st.bar_chart(resultado['media_por_nivel'], x='NIVEL_ESTIMADO', y='MEDIA_MT')
 
     coluna_3, coluna_4 = st.columns(2)
     with coluna_3:
+        # TODO: gráfico/tabela de outro integrante
         st.subheader('Tabela 1')
-        st.dataframe(exemplo, hide_index=True)
+        st.dataframe(resultado['media_por_nivel'], hide_index=True)
     with coluna_4:
+        # TODO: gráfico/tabela de outro integrante
         st.subheader('Resumo')
         st.dataframe(pl.DataFrame({
-            'INDICADOR': list(resultado.keys()),
-            'VALOR': [str(valor) for valor in resultado.values()],
+            'INDICADOR': list(posicao.keys()),
+            'VALOR': [str(valor) for valor in posicao.values()],
         }), hide_index=True)
 
     if st.button('Nova consulta'):
