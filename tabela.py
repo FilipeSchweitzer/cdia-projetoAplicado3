@@ -10,6 +10,14 @@ import polars as pl
 
 COLUNAS_NOTA = ['NU_NOTA_CN', 'NU_NOTA_CH', 'NU_NOTA_LC', 'NU_NOTA_MT', 'NU_NOTA_REDACAO']
 
+NOMES_AREAS = {
+    'NU_NOTA_CN': 'Ciências da Natureza',
+    'NU_NOTA_CH': 'Ciências Humanas',
+    'NU_NOTA_LC': 'Linguagens e Códigos',
+    'NU_NOTA_MT': 'Matemática',
+    'NU_NOTA_REDACAO': 'Redação',
+}
+
 # abaixo disso o percentil/média fica instável e não é calculado
 MIN_CANDIDATOS = 30
 
@@ -73,7 +81,7 @@ def tratar_inse_municipios(df_inse_municipios: pl.DataFrame, limites: pl.DataFra
             & (pl.col('TP_LOCALIZACAO') == LOCALIZACAO_TOTAL)
             & pl.col('MEDIA_INSE').is_not_null()
         )
-        .select('CO_MUNICIPIO', 'CO_UF', 'NO_UF', 'MEDIA_INSE')
+        .select('CO_MUNICIPIO', 'CO_UF', 'NO_UF', 'NO_MUNICIPIO', 'MEDIA_INSE')
         .with_columns(classificar_inse('MEDIA_INSE', limites).alias('NIVEL_DO_MUNICIPIO'))
     )
 
@@ -197,6 +205,76 @@ def calcular_media_por_nivel(df_nivel: pl.DataFrame) -> pl.DataFrame:
         )
         .sort('NIVEL_ESTIMADO')
     )
+
+
+def medias_por_uf(df_nivel: pl.DataFrame, df_inse_municipios: pl.DataFrame) -> pl.DataFrame:
+    """Média de cada área por UF de residência de prova (formato longo: NO_UF, AREA, MEDIA)."""
+    df = (
+        df_nivel
+        .group_by('CO_UF_REF')
+        .agg(
+            pl.len().alias('CANDIDATOS'),
+            *[pl.col(coluna).mean().round(1).alias(coluna) for coluna in COLUNAS_NOTA],
+        )
+        .join(ufs(df_inse_municipios), left_on='CO_UF_REF', right_on='CO_UF', how='inner')
+    )
+    return df.unpivot(
+        COLUNAS_NOTA, index=['NO_UF', 'CANDIDATOS'],
+        variable_name='COLUNA', value_name='MEDIA',
+    ).with_columns(
+        pl.col('COLUNA').replace_strict(NOMES_AREAS).alias('AREA'),
+    ).drop('COLUNA')
+
+
+def medias_por_municipio(
+    df_nivel: pl.DataFrame,
+    df_inse_municipios: pl.DataFrame,
+    co_uf: int,
+    top: int = 15,
+) -> pl.DataFrame:
+    """Média de cada área nos municípios com mais candidatos dentro de uma UF (formato longo)."""
+    df = (
+        df_nivel
+        .filter(pl.col('CO_UF_REF') == co_uf)
+        .group_by('CO_MUNICIPIO_REF')
+        .agg(
+            pl.len().alias('CANDIDATOS'),
+            *[pl.col(coluna).mean().round(1).alias(coluna) for coluna in COLUNAS_NOTA],
+        )
+        .filter(pl.col('CANDIDATOS') >= MIN_CANDIDATOS)
+        .join(
+            df_inse_municipios.select('CO_MUNICIPIO', 'NO_MUNICIPIO'),
+            left_on='CO_MUNICIPIO_REF', right_on='CO_MUNICIPIO', how='left',
+        )
+        .with_columns(
+            pl.coalesce('NO_MUNICIPIO', pl.col('CO_MUNICIPIO_REF').cast(pl.String)).alias('MUNICIPIO'),
+        )
+        .sort('CANDIDATOS', descending=True)
+        .head(top)
+    )
+    return df.unpivot(
+        COLUNAS_NOTA, index=['MUNICIPIO', 'CANDIDATOS'],
+        variable_name='COLUNA', value_name='MEDIA',
+    ).with_columns(
+        pl.col('COLUNA').replace_strict(NOMES_AREAS).alias('AREA'),
+    ).drop('COLUNA')
+
+
+def distribuicao_notas(df_nivel: pl.DataFrame) -> pl.DataFrame:
+    """Média, mediana e percentis de cada área entre candidatos com nota naquela área."""
+    linhas = []
+    for coluna, area in NOMES_AREAS.items():
+        notas = df_nivel[coluna].drop_nulls()
+        if notas.len() < MIN_CANDIDATOS:
+            continue
+        linhas.append({
+            'AREA': area,
+            'CANDIDATOS': notas.len(),
+            'MEDIA': round(notas.mean(), 1),
+            'MEDIANA': round(notas.median(), 1),
+            **{f'P{p}': round(notas.quantile(p / 100), 1) for p in (10, 25, 75, 90)},
+        })
+    return pl.DataFrame(linhas)
 
 
 def resumir_perfil(df_perfil: pl.DataFrame, coluna_nota: str) -> dict:

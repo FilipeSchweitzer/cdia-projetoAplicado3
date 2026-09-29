@@ -12,13 +12,7 @@ import extrator_microdados as extrator
 import tabela
 
 # nome mostrado no app -> coluna de nota nos microdados
-AREAS_NOTA = {
-    'Ciências da Natureza': 'NU_NOTA_CN',
-    'Ciências Humanas': 'NU_NOTA_CH',
-    'Linguagens e Códigos': 'NU_NOTA_LC',
-    'Matemática': 'NU_NOTA_MT',
-    'Redação': 'NU_NOTA_REDACAO',
-}
+AREAS_NOTA = {nome: coluna for coluna, nome in tabela.NOMES_AREAS.items()}
 
 # variáveis do perfil do candidato que viram dropdowns no formulário (valores vêm do dicionário)
 VARIAVEIS_PERFIL = ['TP_SEXO', 'TP_COR_RACA', 'TP_NACIONALIDADE', 'TP_ST_CONCLUSAO', 'TP_ANO_CONCLUIU']
@@ -163,4 +157,12 @@ def analisar(entrada: dict) -> dict:
         'percentis': tabela.calcular_percentis(df_nivel, coluna_nota, entrada['nota'], nivel, co_uf),
         'media_por_nivel': tabela.calcular_media_por_nivel(df_nivel),
         'perfil': tabela.resumir_perfil(tabela.filtrar_candidato(df_nivel, candidato), coluna_nota),
+        'uf': entrada['uf'],
+        'area': entrada['area'],
+        'medias_uf': tabela.medias_por_uf(df_nivel, df_municipios),
+        'medias_municipio': tabela.medias_por_municipio(df_nivel, df_municipios, co_uf),
+        'distribuicao': {
+            'Brasil': tabela.distribuicao_notas(df_nivel),
+            'Sua UF': tabela.distribuicao_notas(df_nivel.filter(pl.col('CO_UF_REF') == co_uf)),
+        },
     }

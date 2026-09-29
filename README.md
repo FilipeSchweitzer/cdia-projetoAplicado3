@@ -65,7 +65,7 @@ O app usa sempre o ano mais recente que já foi extraído. Se nenhum ano foi ext
 
 ## Como adicionar uma análise no dashboard
 
-Cada integrante é dono de **um** dos quatro espaços do dashboard (Gráfico 1 = percentil, já feito). Para não haver conflito no Git, cada um mexe só nos seus arquivos e no seu espaço.
+Cada integrante é dono de **um** dos quatro espaços do dashboard. Já estão feitos: Gráfico 1 (percentil, `graficos/percentil.py`), Gráfico 2 (médias por UF e município, `graficos/regional.py`) e Gráfico 3 (distribuição de notas por área, `graficos/distribuicao.py`). Para não haver conflito no Git, cada um mexe só nos seus arquivos e no seu espaço.
 
 O caminho é sempre o mesmo, em quatro passos. O exemplo abaixo cria o gráfico "média do grupo INSE por área".
 

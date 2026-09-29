@@ -4,7 +4,7 @@ import polars as pl
 import streamlit as st
 
 import main
-from graficos import percentil
+from graficos import distribuicao, percentil, regional
 
 # permite rodar com "python app.py" (ex.: botão Run do VSCode), relançando via "streamlit run"
 if __name__ == '__main__' and not st.runtime.exists():
@@ -158,15 +158,45 @@ def pagina_dashboard():
         st.caption(percentil.frase_percentil(resultado['percentis']))
         st.altair_chart(percentil.grafico_percentis(resultado['percentis']), width='stretch')
     with coluna_2:
-        # TODO: gráfico de outro integrante
-        st.subheader('Gráfico 2')
-        st.bar_chart(resultado['media_por_nivel'], x='NIVEL_ESTIMADO', y='MEDIA_MT')
+        st.subheader('Médias por UF e município')
+        area_regional = st.selectbox(
+            'Área', main.AREAS_NOTA.keys(),
+            index=list(main.AREAS_NOTA).index(resultado['area']), key='area_regional',
+        )
+        st.caption(regional.frase_regional(resultado['medias_uf'], area_regional, resultado['uf']))
+        aba_ufs, aba_municipios = st.tabs(['UFs', f'Municípios de {resultado["uf"]}'])
+        with aba_ufs:
+            st.altair_chart(
+                regional.grafico_medias_uf(resultado['medias_uf'], area_regional, resultado['uf']),
+                width='stretch',
+            )
+        with aba_municipios:
+            grafico_municipios = regional.grafico_medias_municipio(
+                resultado['medias_municipio'], area_regional, resultado['uf'],
+            )
+            if grafico_municipios is None:
+                st.info('Não há municípios com candidatos suficientes na sua UF.')
+            else:
+                st.altair_chart(grafico_municipios, width='stretch')
 
     coluna_3, coluna_4 = st.columns(2)
     with coluna_3:
-        # TODO: gráfico/tabela de outro integrante
-        st.subheader('Tabela 1')
-        st.dataframe(resultado['media_por_nivel'], hide_index=True)
+        st.subheader('Distribuição de notas por área')
+        escopo = st.radio('Escopo', ['Brasil', 'Sua UF'], horizontal=True, key='escopo_distribuicao')
+        df_dist = resultado['distribuicao'][escopo]
+        if df_dist.is_empty():
+            st.info('Candidatos insuficientes nesse escopo.')
+        else:
+            st.caption(distribuicao.frase_distribuicao(df_dist, resultado['area'], escopo))
+            st.altair_chart(
+                distribuicao.grafico_distribuicao(df_dist, posicao['nota_usuario'], resultado['area']),
+                width='stretch',
+            )
+            with st.expander('Média, mediana e percentis'):
+                st.dataframe(
+                    df_dist.select('AREA', 'CANDIDATOS', 'MEDIA', 'MEDIANA', 'P10', 'P25', 'P75', 'P90'),
+                    hide_index=True,
+                )
     with coluna_4:
         # TODO: gráfico/tabela de outro integrante
         st.subheader('Resumo')
