@@ -1,5 +1,6 @@
 *.pem
 *.json
+!skills/**/*.json
 */__pycache__
 __pycache__
 .venv

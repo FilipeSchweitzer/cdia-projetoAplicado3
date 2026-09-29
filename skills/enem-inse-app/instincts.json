@@ -1,0 +1,104 @@
+{
+  "instincts": [
+    {
+      "trigger": "Adicionar um gráfico, tabela ou análise nova ao dashboard do app Posição no Enem",
+      "action": "Seguir a receita em 4 passos: cálculo em tabela.py (Polars puro, sem Streamlit), resultado numa chave nova de main.analisar(), desenho em graficos/<seu_arquivo>.py (Altair), e ligar só no seu espaço em pagina_dashboard(). Verificar o checklist do README.",
+      "confidence": 0.95,
+      "source": "git-history-analysis",
+      "evidence": "README 'Como adicionar uma análise no dashboard' + commits 0a6ccf5 (App Esqueleto) e f501f12 (Reorganização do Fluxo)"
+    },
+    {
+      "trigger": "Ler os microdados do Enem (CSV de 1,7 GB+) ou qualquer arquivo grande do INEP",
+      "action": "Nunca usar read_csv eager. Ler o parquet com pl.scan_parquet, selecionar só as colunas necessárias e coletar por último. Se vier de CSV latin1, converter para UTF-8 em blocos de 16 MB antes do scan_csv. Colunas novas entram em COLUNAS_MICRODADOS no main.py.",
+      "confidence": 0.95,
+      "source": "git-history-analysis",
+      "evidence": "extrator_microdados.py csvs_para_parquet/ler_microdados + README 'os microdados não cabem na memória'"
+    },
+    {
+      "trigger": "Calcular média, percentil ou qualquer estatística sobre um grupo de candidatos",
+      "action": "Checar o tamanho do grupo contra tabela.MIN_CANDIDATOS (=30) antes de calcular. Grupo pequeno vira mensagem explícita de dados insuficientes (com a contagem), nunca omissão silenciosa nem valor calculado.",
+      "confidence": 0.9,
+      "source": "git-history-analysis",
+      "evidence": "tabela.py estimar_posicao_candidato/calcular_percentis + graficos/percentil.py frase_percentil"
+    },
+    {
+      "trigger": "Adicionar um campo novo no formulário com opções fixas (ex.: cor/raça, situação do ensino médio)",
+      "action": "As opções vêm de main.opcoes_formulario() (dicionário do ano ou INSE), nunca escritas à mão. A conversão texto→código fica no main.py com decodificar(variavel, descricao) que usa o DICIONARIO_{ano}.json e normalização NFKD. O app só manda texto.",
+      "confidence": 0.9,
+      "source": "git-history-analysis",
+      "evidence": "main.py decodificar/_normalizar/opcoes_formulario + README Passo 2 'campo novo no formulário'"
+    },
+    {
+      "trigger": "Download do site do INEP falha, cai no meio ou dá erro de SSL/certificado",
+      "action": "Usar o fluxo do extrator: garantir_ca_bundle() (o INEP não envia o certificado intermediário), pegar_com_retry com backoff exponencial 2^i, e baixar_com_resume com header Range para retomar de onde parou — tratando servidores sem suporte a resume (recomeçar do zero).",
+      "confidence": 0.9,
+      "source": "git-history-analysis",
+      "evidence": "Commit a87347d 'Fix - Download Dados' + extrator_microdados.py pegar_com_retry/baixar_com_resume/garantir_ca_bundle"
+    },
+    {
+      "trigger": "Tratar planilhas de um ano do INSE/ENEM ainda não suportado ou colunas divergirem entre anos",
+      "action": "Não assumir esquema estável: 2019 usa outros nomes de coluna (RENOMEAR_INSE_2019), planilhas têm linhas de observação antes do cabeçalho (detectar a linha dinamicamente) e asteriscos nos nomes (strip). CO_ESCOLA só existe até 2019 — usar join condicional e coalesce com o nível do município. Cada ano tem seu DICIONARIO_{ano}.json.",
+      "confidence": 0.85,
+      "source": "git-history-analysis",
+      "evidence": "extrator_microdados.py ler_planilha_inse + tabela.py RENOMEAR_INSE_2019/resultados_nivel + README 'Decisões sobre os dados'"
+    },
+    {
+      "trigger": "Escrever código que mistura responsabilidades (st.* em tabela.py/extrator, códigos INEP em app.py, decodificação em tabela.py)",
+      "action": "Aplicar a arquitetura em camadas: app.py só UI, main.py decodifica e orquestra (com @cache para carregar 1x por processo), tabela.py só Polars puro recebendo DataFrames e códigos, graficos/ só desenho Altair. Mover a lógica para a camada certa antes de prosseguir.",
+      "confidence": 0.95,
+      "source": "git-history-analysis",
+      "evidence": "README tabela de responsabilidades + docstrings de main.py e tabela.py + commit f501f12"
+    },
+    {
+      "trigger": "Trabalhar como integrante do grupo no mesmo repositório (arquivo compartilhado, risco de conflito no Git)",
+      "action": "Mexer só nos seus arquivos: seu graficos/<seu_arquivo>.py e o seu espaço do dashboard em app.py (marcado com # TODO). Mudanças no contrato compartilhado (tabela.py, main.py) seguem a receita dos 4 passos para não quebrar os outros integrantes.",
+      "confidence": 0.8,
+      "source": "git-history-analysis",
+      "evidence": "README 'cada integrante é dono de um dos quatro espaços' + # TODO em app.py coluna_4"
+    },
+    {
+      "trigger": "Escrever mensagem de commit neste repositório",
+      "action": "Português, prefixo curto + nome: 'Feature <Nome>' para funcionalidade, 'Fix - <Nome>' para correção, ou rótulo direto (ex.: 'Reorganização do Fluxo'). Documentar no corpo o que mudou e problemas conhecidos/limitações restantes (ex.: commit a87347d lista o problema de CSVs não ordenados).",
+      "confidence": 0.75,
+      "source": "git-history-analysis",
+      "evidence": "git log: 'Feature Leitura CSV', 'Feature Filtragem Dados', 'Fix - Download Dados', 'App Esqueleto', com corpo explicativo em a87347d"
+    },
+    {
+      "trigger": "Usar notebook (tabela.ipynb / Colab_notebook.ipynb) para desenvolver ou testar lógica",
+      "action": "Notebook é só exploração: importa os .py para testar e nunca vira a fonte oficial. A lógica validada vai para o arquivo .py da camada certa. Testes com dados de verdade rodam no Colab ou servidor (~12 GB RAM), não em máquina fraca.",
+      "confidence": 0.8,
+      "source": "git-history-analysis",
+      "evidence": "README estrutura ('A lógica oficial fica nos .py') + commits 'Criado usando o Colab' + checklist 'testado com dados de verdade no Colab ou no servidor'"
+    },
+    {
+      "trigger": "Um grupo/escopo de análise fica vazio ou sem dados suficientes no dashboard",
+      "action": "Nunca omitir em silêncio: mostrar st.info/caption com mensagem explícita ('Não há municípios com candidatos suficientes na sua UF', 'dados insuficientes (N candidatos)'), como fazem pagina_dashboard e frase_percentil.",
+      "confidence": 0.85,
+      "source": "git-history-analysis",
+      "evidence": "app.py pagina_dashboard + graficos/percentil.py frase_percentil ('em vez de sumir com elas em silêncio')"
+    },
+    {
+      "trigger": "Cruzar dados do candidato com o nível INSE (escola vs. município)",
+      "action": "Seguir as decisões do README: o nível do usuário vem da escola se ela estiver no INSE, senão do município (nivel_usuario devolve também a fonte 'escola'/'município'). Para os microdados, usar CO_MUNICIPIO_REF = município da escola se informou, senão o da prova; municípios são classificados com as faixas das escolas do mesmo ano (limites_niveis + cut).",
+      "confidence": 0.85,
+      "source": "git-history-analysis",
+      "evidence": "README 'Decisões sobre os dados' + tabela.py nivel_usuario/resultados_nivel/classificar_inse"
+    },
+    {
+      "trigger": "Adicionar um campo de formulário cujas opções dependem de outro campo (ex.: municípios filtrados pela UF)",
+      "action": "O par de campos fica FORA do st.form (dentro do form o script só roda no envio; a cascata não atualiza). Padrão: o selectbox pai (UF) alimenta main.opcoes_<coisa>(valor_do_pai), que devolve as opções do selectbox filho, com key fixa para manter a escolha; trocar o pai limpa a escolha do filho automaticamente (o valor sai das opções). Obs.: a busca nativa do st.selectbox ao digitar NÃO ignora acentos (o JS só faz toLowerCase) — para busca insensível a acentos, filtrar no script com main._normalizar.",
+      "confidence": 0.95,
+      "source": "git-history-analysis",
+      "evidence": "app.py pagina_formulario (UF -> main.opcoes_municipios(uf)) + main.py opcoes_municipios/_municipios_normalizados + teste AppTest: SP -> 645 municípios só de SP, troca de UF limpa a seleção"
+    }
+  ],
+  "metadata": {
+    "generated_from": "git-history-analysis",
+    "repository": "cdia-projetoAplicado3 (Posição no Enem)",
+    "analysis_date": "2026-09-28",
+    "commits_analyzed": 11,
+    "commit_range": "0a7b023..a992269",
+    "skill": "enem-inse-app",
+    "notes": "Instintos derivados dos padrões recorrentes no histórico (arquitetura em camadas, receita de 4 passos, Polars lazy, MIN_CANDIDATOS, tolerância entre anos, downloads resumíveis) e da documentação viva no README. Atualizado após implementar a cascata UF -> municípios (opcoes_municipios fora do st.form; campo de busca avulsa removido a pedido do usuário)."
+  }
+}
