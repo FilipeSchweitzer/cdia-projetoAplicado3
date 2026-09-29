@@ -117,7 +117,7 @@ Dentro de `analisar()` você já tem:
 | `coluna_nota` | coluna da área escolhida (ex.: `'NU_NOTA_MT'`) |
 | `co_uf` | código da UF escolhida |
 | `candidato` | perfil do usuário em códigos (`tabela.Candidato`) |
-| `entrada` | o que veio do formulário, ex.: `entrada['nota']`, `entrada['co_municipio']` |
+| `entrada` | o que veio do formulário, ex.: `entrada['nota']`, `entrada['municipio']` |
 
 Se a análise precisar de um **campo novo no formulário**:
 1. Adicione o campo no `app.py`, em `pagina_formulario()`, e coloque o valor em `entrada`.

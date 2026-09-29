@@ -91,6 +91,16 @@ def ufs(df_inse_municipios: pl.DataFrame) -> pl.DataFrame:
     return df_inse_municipios.select('CO_UF', 'NO_UF').unique().sort('NO_UF')
 
 
+def municipios(df_inse_municipios: pl.DataFrame) -> pl.DataFrame:
+    """Tabela CO_MUNICIPIO / NO_MUNICIPIO / CO_UF / NO_UF, ordenada por nome (para o selectbox do formulário)."""
+    return (
+        df_inse_municipios
+        .select('CO_MUNICIPIO', 'NO_MUNICIPIO', 'CO_UF', 'NO_UF')
+        .unique()
+        .sort(['NO_MUNICIPIO', 'NO_UF'])
+    )
+
+
 # ---------------------------------------------------------------- microdados + INSE
 
 def resultados_nivel(

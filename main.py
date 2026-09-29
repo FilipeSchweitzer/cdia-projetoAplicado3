@@ -62,6 +62,25 @@ def _df_nivel() -> pl.DataFrame:
     return tabela.resultados_nivel(df_microdados, df_escolas, df_municipios)
 
 
+@cache
+def _municipios_normalizados() -> pl.DataFrame:
+    """Municípios com nome, UF e código normalizados (sem acento), para a busca do formulário."""
+    df = tabela.municipios(_inse()[1])
+    return df.with_columns(
+        pl.col('NO_MUNICIPIO').map_elements(_normalizar, return_dtype=pl.String).alias('NORM_NOME'),
+        pl.col('NO_UF').map_elements(_normalizar, return_dtype=pl.String).alias('NORM_UF'),
+        pl.col('CO_MUNICIPIO').cast(pl.String).alias('CODIGO'),
+    )
+
+
+@cache
+def _rotulos_municipios() -> tuple[list[str], dict[str, int]]:
+    """Rótulos 'Nome (UF) — código IBGE' de todos os municípios com INSE, para o selectbox do formulário."""
+    df = _municipios_normalizados()
+    rotulos = [_rotulo_municipio(nome, uf, codigo) for codigo, nome, _, uf, *_ in df.iter_rows()]
+    return rotulos, dict(zip(rotulos, df['CO_MUNICIPIO'].to_list()))
+
+
 # ---------------------------------------------------------------- decodificação (texto do app -> código)
 
 def _normalizar(texto: str) -> str:
@@ -90,6 +109,18 @@ def decodificar_uf(nome_uf: str) -> int:
     if linha.height == 0:
         raise ValueError(f"UF '{nome_uf}' não encontrada.")
     return int(linha['CO_UF'][0])
+
+
+def decodificar_municipio(rotulo: str) -> int:
+    """Converte o rótulo 'Nome (UF) — código' escolhido no app no código IBGE do município."""
+    _, mapa = _rotulos_municipios()
+    if rotulo not in mapa:
+        raise ValueError(f"Município '{rotulo}' não encontrado.")
+    return int(mapa[rotulo])
+
+
+def _rotulo_municipio(nome: str, uf: str, codigo: int) -> str:
+    return f'{nome} ({uf}) — {codigo}'
 
 
 def calcular_faixa_etaria(idade: int) -> int:
@@ -136,19 +167,33 @@ def opcoes_formulario() -> dict:
     }
 
 
+def opcoes_municipios(uf: str | None = None) -> list[str]:
+    """Rótulos 'Nome (UF) — código IBGE' dos municípios para o selectbox do formulário.
+
+    Com uma UF escolhida, só os municípios dela; sem UF, todos os 5,5 mil com INSE.
+    """
+    if not uf:
+        return _rotulos_municipios()[0]
+
+    df = _municipios_normalizados().filter(pl.col('NORM_UF') == _normalizar(uf))
+    return [_rotulo_municipio(nome, uf_nome, codigo) for codigo, nome, _, uf_nome, *_ in df.iter_rows()]
+
+
 def analisar(entrada: dict) -> dict:
     """Recebe o formulário do app (textos e números) e devolve tudo que o dashboard precisa.
 
-    entrada: area, nota, uf, co_municipio, co_escola (ou None), idade, sexo, cor_raca,
-             nacionalidade, st_conclusao, ano_concluiu, treineiro
+    entrada: area, nota, uf, municipio (rótulo 'Nome (UF) — código' do selectbox),
+             co_escola (ou None), idade, sexo, cor_raca, nacionalidade, st_conclusao,
+             ano_concluiu, treineiro
     """
     coluna_nota = AREAS_NOTA[entrada['area']]
     co_uf = decodificar_uf(entrada['uf'])
+    co_municipio = decodificar_municipio(entrada['municipio'])
     candidato = decodificar_candidato(entrada)
 
     df_escolas, df_municipios = _inse()
     df_nivel = _df_nivel()
-    nivel, fonte_nivel = tabela.nivel_usuario(df_escolas, df_municipios, entrada['co_municipio'], entrada['co_escola'])
+    nivel, fonte_nivel = tabela.nivel_usuario(df_escolas, df_municipios, co_municipio, entrada['co_escola'])
 
     return {
         'ano': ano_atual(),

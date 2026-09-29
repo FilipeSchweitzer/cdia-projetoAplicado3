@@ -66,15 +66,22 @@ def pagina_formulario():
 
     st.caption(f'Comparação com os microdados do Enem {opcoes["ano"]}.')
 
+    # A Localização fica fora do st.form porque a lista de municípios depende da UF
+    # escolhida (dentro do form nada atualiza antes de enviar).
+    st.subheader('Localização')
+    uf = st.selectbox('Unidade da Federação', opcoes['ufs'], index=None, placeholder='Selecione a sua UF')
+    municipio = st.selectbox(
+        'Município', main.opcoes_municipios(uf), index=None, key='municipio',
+        placeholder='Selecione o seu município',
+        help='Abra a lista e digite para filtrar pelo nome ou pelo código IBGE. '
+             'Com uma UF escolhida, só aparecem os municípios dela.',
+    )
+    co_escola = st.text_input('Código da escola (opcional)', placeholder='Ex.: 35000000')
+
     with st.form('form_candidato'):
         st.subheader('Nota')
         area = st.selectbox('Área de conhecimento', opcoes['areas'])
         nota = st.number_input('Sua nota', min_value=0.0, max_value=1000.0, value=None, step=0.1)
-
-        st.subheader('Localização')
-        uf = st.selectbox('Unidade da Federação', opcoes['ufs'], index=None, placeholder='Selecione a sua UF')
-        co_municipio = st.text_input('Código do município (IBGE)', placeholder='Ex.: 3550308')
-        co_escola = st.text_input('Código da escola (opcional)', placeholder='Ex.: 35000000')
 
         st.subheader('Perfil')
         idade = st.number_input('Idade', min_value=10, max_value=100, value=None, step=1)
@@ -95,8 +102,8 @@ def pagina_formulario():
     if uf is None:
         st.error('Selecione a sua UF.')
         return
-    if not co_municipio.strip().isdigit():
-        st.error('Informe um código de município válido (apenas números).')
+    if municipio is None:
+        st.error('Selecione o seu município.')
         return
     if co_escola.strip() and not co_escola.strip().isdigit():
         st.error('O código da escola deve conter apenas números.')
@@ -113,7 +120,7 @@ def pagina_formulario():
         'area': area,
         'nota': nota,
         'uf': uf,
-        'co_municipio': int(co_municipio),
+        'municipio': municipio,
         'co_escola': int(co_escola) if co_escola.strip() else None,
         'idade': idade,
         **perfil,
@@ -214,6 +221,10 @@ iniciar_estado()
 with st.sidebar:
     if st.session_state.usuario:
         st.write(f'Usuário: {st.session_state.usuario}')
+        # atalho para o dashboard da última consulta (só faz sentido com um resultado)
+        if st.session_state.resultado is not None:
+            if st.button('Dashboard', disabled=st.session_state.pagina == 'dashboard'):
+                ir_para('dashboard')
         if st.button('Sair'):
             st.session_state.clear()
             st.rerun()
